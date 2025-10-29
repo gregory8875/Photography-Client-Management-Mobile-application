@@ -1,0 +1,11 @@
+Please place your app icon PNG here with the filename `app_icon.png`.
+
+Expected path: assets/app_icon.png
+Recommended size: a large square PNG (at least 1024x1024) with transparency if desired.
+
+After placing the file, run:
+
+flutter pub get
+flutter pub run flutter_launcher_icons:main
+
+This will generate platform-specific launcher icons for Android and iOS.
