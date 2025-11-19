@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:shutterbook/data/models/client.dart';
 import 'package:shutterbook/data/tables/package_table.dart';
 import 'package:shutterbook/data/models/package.dart';
+import 'package:shutterbook/theme/ui_styles.dart';
+import 'package:shutterbook/utils/formatters.dart';
+import '../package_add/package_add.dart';
 
 
 
@@ -97,7 +100,28 @@ for(Package p in packages)
         const Text('Pick Packages'),
          Expanded(
            child:allpackages.isEmpty? 
-           const Center(child:Text('No packages found'))
+           Center(
+            child:Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+             children: [
+               const Text('No packages found'),
+               const SizedBox(height: 20),
+               ElevatedButton(
+                style: UIStyles.primaryButton(context),
+                onPressed: () async {
+              await Navigator.push(
+                context, 
+                MaterialPageRoute(builder: (context)=> const PackageAdd())
+              );
+              // Reload the package picker when returning
+              if (mounted) {
+                await reload();
+              }
+            },
+                child: const Text('Add Package'))
+             ],
+           ))
+           
             :ListView.builder(
              itemCount:allpackages.length,
              itemBuilder: (context, index) {
@@ -106,7 +130,7 @@ for(Package p in packages)
                final quantity = _selectedPackages[package] ?? 1;
                return Card(
                  child: ListTile(
-                   title: Text('${package.name} (R${package.price})'),
+                   title: Text('${package.name} (${formatRand(package.price)})'),
                    trailing: isSelected
                        ? Row(
                            mainAxisSize: MainAxisSize.min,
@@ -144,7 +168,7 @@ for(Package p in packages)
            ),
          ),
          const SizedBox(height: 10),
-         Text('Selected: $totalItems items, Total: R${totalPrice.toStringAsFixed(2)}'),
+         Text('Selected: $totalItems items, Total: ${formatRand(totalPrice)}'),
          const SizedBox(height: 10),
 
         

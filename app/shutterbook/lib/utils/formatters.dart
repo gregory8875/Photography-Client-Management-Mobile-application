@@ -1,12 +1,12 @@
 // Shutterbook — formatters.dart
-// Tiny, focused formatting helpers used across the app. Kept intentionally
-// minimal to avoid pulling in heavy locale packages. Replace with `intl`
-// if you need locale-aware formatting in the future.
+// Tiny, focused formatting helpers used across the app. Uses `intl` to
+// provide consistent South African Rand (ZAR) formatting across the UI.
+import 'package:intl/intl.dart';
 
-/// Format a numeric value as South African Rand with two decimal places.
+/// Format a numeric value as South African Rand (ZAR) with two decimal places.
 String formatRand(double value) {
-  const currency = 'R';
-  return '$currency${value.toStringAsFixed(2)}';
+  final fmt = NumberFormat.simpleCurrency(name: 'ZAR', decimalDigits: 2);
+  return fmt.format(value);
 }
 
 /// Format a DateTime as a readable date and time string (without seconds/milliseconds).

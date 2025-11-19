@@ -93,13 +93,13 @@ class _PackagePickerEditScreenState extends State<PackagePickerEditScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.fromLTRB(16.00,16.00,16.00,32.00),
               child: ElevatedButton(
                 onPressed: _navigateToOverview,
-                style: UIStyles.primaryButton(context).copyWith(minimumSize: WidgetStatePropertyAll(const Size(double.infinity,50))),
+                style: _selectedPackages.isEmpty ? UIStyles.primaryButtonGrey(context).copyWith(minimumSize: WidgetStatePropertyAll(const Size(double.infinity,50))): UIStyles.primaryButton(context).copyWith(minimumSize: WidgetStatePropertyAll(const Size(double.infinity,50))),
                 child: Text(
                   _selectedPackages.isEmpty 
-                    ? 'Continue' 
+                    ? 'Please select a package first' 
                     : 'Continue (${_selectedPackages.length} package${_selectedPackages.length != 1 ? 's' : ''} selected)'
                 ),
               ),

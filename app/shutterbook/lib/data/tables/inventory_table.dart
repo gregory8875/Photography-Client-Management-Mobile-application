@@ -32,11 +32,14 @@ class InventoryTable {
     return null;
   }
 
-  Future<List<Item>> getAllItems() async {
-    Database db = await dbHelper.database;
-    final maps = await db.query('Inventory');
-    return maps.map((m) => Item.fromMap(m)).toList();
-  }
+ Future<List<Item>> getAllItems() async {
+  final db = await DatabaseHelper.instance.database;
+  final maps = await db.query(
+    'Inventory',
+    orderBy: 'name ASC', 
+  );
+  return maps.map((map) => Item.fromMap(map)).toList();
+}
 
   Future<List<Item>> getItemsPaged(int limit, int offset) async {
     final db = await dbHelper.database;

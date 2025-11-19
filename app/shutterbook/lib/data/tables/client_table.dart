@@ -14,7 +14,9 @@ class ClientTable {
     return await db.insert(
       'Clients',
       client.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
+      // Abort on conflict so higher layers can detect duplicates and react
+      // (previously used replace which silently overwrote an existing row).
+      conflictAlgorithm: ConflictAlgorithm.abort,
     );
   }
 

@@ -306,6 +306,8 @@ class _StatsPageState extends State<StatsPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Local formatter for quick insight labels (ZAR, locale-aware)
+    final currencyFormatter = NumberFormat.simpleCurrency(name: 'ZAR', locale: Localizations.localeOf(context).toString());
     return Scaffold(
       appBar: UIStyles.accentAppBar(context, const Text('Stats'), 1),
       body: SafeArea(
@@ -391,7 +393,7 @@ class _StatsPageState extends State<StatsPage> {
                           Text('• Upcoming bookings: $_upcoming'),
                           Text('• Clients: $_clients'),
                           Text('• Quotes: $_quotesCount'),
-                          Text('• Total revenue: ${_totalRevenue.toStringAsFixed(2)}'),
+                          Text('• Total revenue: ${currencyFormatter.format(_totalRevenue)}'),
                           const SizedBox(height: 8),
                           Text('Top clients', style: theme.textTheme.titleSmall),
                           const SizedBox(height: 8),
@@ -459,7 +461,8 @@ class _StatsPageState extends State<StatsPage> {
 
     final spots = List.generate(_monthlyRevenue.length, (i) => FlSpot(i.toDouble(), _monthlyRevenue[i]));
     final maxY = _monthlyRevenue.reduce((a, b) => a > b ? a : b);
-    final formatter = NumberFormat.simpleCurrency(locale: Localizations.localeOf(context).toString());
+    // Use ZAR currency formatting (locale-aware)
+    final formatter = NumberFormat.simpleCurrency(name: 'ZAR', locale: Localizations.localeOf(context).toString());
 
     return Card(
       elevation: 0,
@@ -483,7 +486,7 @@ class _StatsPageState extends State<StatsPage> {
           minY: 0,
           maxY: maxY == 0 ? 1.0 : maxY,
           lineBarsData: [
-            LineChartBarData(spots: spots, isCurved: true, color: theme.colorScheme.primary, barWidth: 3, dotData: FlDotData(show: true)),
+            LineChartBarData(spots: spots, isCurved: false, color: theme.colorScheme.primary, barWidth: 3, dotData: FlDotData(show: true)),
           ],
         )),
       ),

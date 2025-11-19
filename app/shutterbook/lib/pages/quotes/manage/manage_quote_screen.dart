@@ -1,14 +1,17 @@
 // Shutterbook — Manage Quote screen
 // Full screen used to view and edit a single quote's details.
 import 'package:flutter/material.dart';
+
 import 'package:shutterbook/data/models/quote.dart';
 import 'package:shutterbook/data/tables/quote_table.dart';
+import 'package:shutterbook/data/tables/client_table.dart';
 import 'package:shutterbook/pages/bookings/create_booking.dart';
 import 'package:shutterbook/pages/quotes/package_picker/package_edit/package_picker_edit_screen.dart';
 import 'package:shutterbook/utils/formatters.dart';
 import 'package:shutterbook/theme/ui_styles.dart';
-
 import 'package:shutterbook/utils/dialogs.dart';
+import 'package:shutterbook/utils/pdf_exporter.dart';
+import 'package:open_file/open_file.dart';
 
 class ManageQuotePage extends StatefulWidget {
   /// Optional initialQuote can be provided to avoid a DB lookup (useful for tests)
@@ -83,7 +86,52 @@ class _ManageQuotePageState extends State<ManageQuotePage> {
     }
   }
 
-  
+  Future<void> _exportPdf() async {
+    if (_quote == null) return;
+    
+    try {
+      // Get client info
+      final clientTable = ClientTable();
+      final client = await clientTable.getClientById(_quote!.clientId);
+      
+      if (client == null) {
+        if (!mounted) return;
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Client not found')),
+        );
+        return;
+      }
+
+      // Show loading indicator
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Generating PDF...')),
+      );
+
+      // Generate PDF
+      final file = await PdfExporter.generateQuotePdf(_quote!, client);
+
+      // Open the PDF file automatically
+      await OpenFile.open(file.path);
+
+      if (!mounted) return;
+      messenger.clearSnackBars();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('PDF opened: ${file.path}'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Failed to generate PDF: $e')),
+      );
+    }
+  }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
@@ -110,7 +158,8 @@ class _ManageQuotePageState extends State<ManageQuotePage> {
       _quote = updated;
       _editing = false;
     });
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Quote saved')));
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(const SnackBar(content: Text('Quote saved')));
   }
 
   @override
@@ -138,7 +187,11 @@ class _ManageQuotePageState extends State<ManageQuotePage> {
                 setState(() => _editing = true);
               }
             },
-          )
+          ),
+          IconButton(onPressed: _exportPdf, 
+          icon: const Icon(Icons.picture_as_pdf),
+          tooltip: const Text('Export Pdf').data ,)
+            
         ],
       ),
       body: Padding(
@@ -197,48 +250,58 @@ class _ManageQuotePageState extends State<ManageQuotePage> {
                 ])
               ],
               const SizedBox(height: 16),
-              Row(
+              Column(
                 children: [
-                  ElevatedButton.icon(
-                    style: UIStyles.primaryButton(context),
-                    onPressed: () async {
-                      // Book from this quote
-                      final nav = Navigator.of(context);
-                      final created = await nav.push<bool>(
-                        MaterialPageRoute(builder: (_) => CreateBookingPage(quote: _quote)),
-                      );
-                      if (created == true) {
-                        if (mounted) nav.pop(true);
-                      }
-                    },
-                    icon: const Icon(Icons.add_circle_outline),
-                    label: const Text('Book'),
+                  Row(
+                    children: [
+                      ElevatedButton.icon(
+                        style: UIStyles.primaryButton(context),
+                        onPressed: () async {
+                          // Book from this quote
+                          final nav = Navigator.of(context);
+                          final created = await nav.push<bool>(
+                            MaterialPageRoute(builder: (_) => CreateBookingPage(quote: _quote)),
+                          );
+                          if (created == true) {
+                            if (mounted) nav.pop(true);
+                          }
+                        },
+                        icon: const Icon(Icons.add_circle_outline),
+                        label: const Text('Book'),
+                      ),
+                      
+                      const SizedBox(width: 12),
+                      ElevatedButton.icon(
+                        onPressed:() async{
+                           final nav = Navigator.of(context);
+                          final created = await nav.push<bool>(
+                            MaterialPageRoute(builder: (_) => PackagePickerEditScreen(quoteNum: _quote?.id ?? 0)),
+                          );
+                          if (created == true) {
+                            if (mounted) nav.pop(true);
+                          }
+                  
+                        },
+                        style: ElevatedButton.styleFrom(backgroundColor: Color.fromARGB(255, 209, 109, 10)),
+                        icon: const Icon(Icons.edit),
+                        label: const Text('Edit'),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton.icon(
+                        style: UIStyles.destructiveButton(context),
+                        onPressed: _delete,
+                        icon: const Icon(Icons.delete),
+                        label: const Text('Delete'),
+                      ),
+                      
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  ElevatedButton.icon(
-                    onPressed:() async{
-                       final nav = Navigator.of(context);
-                      final created = await nav.push<bool>(
-                        MaterialPageRoute(builder: (_) => PackagePickerEditScreen(quoteNum: _quote?.id ?? 0)),
-                      );
-                      if (created == true) {
-                        if (mounted) nav.pop(true);
-                      }
-
-                    },
-                    icon: const Icon(Icons.edit),
-                    label: const Text('Edit'),
-                  ),
-                  const SizedBox(width: 12),
-                  ElevatedButton.icon(
-                    style: UIStyles.destructiveButton(context),
-                    onPressed: _delete,
-                    icon: const Icon(Icons.delete),
-                    label: const Text('Delete'),
-                  ),
+                      
                 ],
               )
+
             ],
+
           ),
         ),
      

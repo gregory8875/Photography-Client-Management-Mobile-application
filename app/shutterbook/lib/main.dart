@@ -1,7 +1,6 @@
 // Shutterbook — main.dart
 // Entry point for the Shutterbook app. Sets up theme, routing and the
 // initial authentication flow. Small, focused file — keep app wiring here.
-//
 // Tip: For theme tweaks, edit ThemeController or the ThemeData builders
 // used below rather than changing app wiring.
 import 'package:flutter/material.dart';
@@ -32,11 +31,11 @@ Future<void> main() async {
 
   final firstLaunch = await authModel.isFirstLaunch();
 
+
   // Prefetch commonly-used caches (non-blocking) to warm the app and
   // reduce perceived latency when navigating to client/booking screens.
   DataCache.instance.getClients();
   DataCache.instance.getBookings();
-
   runApp(MyApp(authModel: authModel, firstLaunch: firstLaunch));
 }
 
@@ -203,4 +202,4 @@ class MyApp extends StatelessWidget {
       },
     );
   }
-}
+} 

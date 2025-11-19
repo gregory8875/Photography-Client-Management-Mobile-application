@@ -56,12 +56,25 @@ class _BookingsPageState extends State<BookingsPage> {
     _searchController.addListener(_onSearchTextChanged);
   }
 
+  // Key used to force recreation of the BookingListView when data changes
+  Key _listKey = UniqueKey();
+
   /// Open the Create Booking flow from the embedded bookings page.
   /// If a [quote] is provided, the Create flow will preselect it.
   Future<void> openCreateBooking({Quote? quote}) async {
     final nav = Navigator.of(context);
-    await nav.push<bool>(MaterialPageRoute(builder: (_) => CreateBookingPage(quote: quote)));
-    if (mounted) setState(() {});
+    final res = await nav.push<bool>(MaterialPageRoute(builder: (_) => CreateBookingPage(quote: quote)));
+    if (!mounted) return;
+    // If a booking was created, force the list view to reload and switch to list view
+    if (res == true) {
+      setState(() {
+        _listKey = UniqueKey();
+        _prevView = _view;
+        _view = 1;
+      });
+    } else {
+      setState(() {});
+    }
   }
 
   @override
@@ -205,6 +218,7 @@ class _BookingsPageState extends State<BookingsPage> {
           child: _view == 0
               ? const BookingCalendarView()
               : BookingListView(
+                  key: _listKey,
                   searchQuery: _searchQuery.isEmpty ? null : _searchQuery,
                   clientId: _clientFilter?.id,
                 ),
@@ -329,9 +343,24 @@ class _BookingListViewState extends State<BookingListView> {
   @override
   void initState() {
     super.initState();
+    _loadData();
+  }
+
+  void _loadData() {
     _bookingsFuture = DataCache.instance.getBookings();
     _clientsFuture = DataCache.instance.getClients();
     _quotesFuture = _quoteTable.getAllQuotes();
+  }
+
+  Future<void> _reload() async {
+    setState(() {
+      _loadData();
+    });
+    try {
+      await _bookingsFuture;
+      await _clientsFuture;
+      await _quotesFuture;
+    } catch (_) {}
   }
 
   String _fmt(DateTime d) {
@@ -378,10 +407,13 @@ class _BookingListViewState extends State<BookingListView> {
 
         filtered.sort((a, b) => a.bookingDate.compareTo(b.bookingDate));
 
-        return ListView.separated(
-          itemCount: filtered.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 8),
-          itemBuilder: (context, index) {
+        return RefreshIndicator(
+          onRefresh: _reload,
+          child: ListView.separated(
+            physics: const AlwaysScrollableScrollPhysics(),
+            itemCount: filtered.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
             final b = filtered[index];
             final client = clientById[b.clientId];
             final title = client != null ? '${client.firstName} ${client.lastName}' : 'Client #${b.clientId}';
@@ -396,11 +428,29 @@ class _BookingListViewState extends State<BookingListView> {
                 leading: CircleAvatar(child: Text(initials, style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold))),
                 title: Text(title, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
                 subtitle: Text(subtitle, style: theme.textTheme.bodySmall),
-                trailing: IconButton(icon: const Icon(Icons.open_in_new), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CreateBookingPage(existing: b))).then((_) { if (mounted) setState(() {}); })),
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CreateBookingPage(existing: b))).then((_) { if (mounted) setState(() {}); }),
+                trailing: IconButton(
+                  icon: const Icon(Icons.open_in_new),
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CreateBookingPage(existing: b))).then((res) {
+                    if (!mounted) { return; }
+                    if (res == true) {
+                      _reload();
+                    } else {
+                      setState(() {});
+                    }
+                  }),
+                ),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CreateBookingPage(existing: b))).then((res) {
+                  if (!mounted) { return; }
+                  if (res == true) {
+                    _reload();
+                  } else {
+                    setState(() {});
+                  }
+                }),
               ),
             );
           },
+          ),
         );
       },
     );

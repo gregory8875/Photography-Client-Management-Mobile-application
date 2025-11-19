@@ -38,9 +38,9 @@ class _FastPageScrollPhysics extends PageScrollPhysics {
     } else {
       // Lower threshold (12%) for deciding whether to move to next page.
       // This makes short swipes more likely to switch pages.
-      final double frac = page - page.floorToDouble();
-      if (frac > 0.08) {
-        targetPage = page.floorToDouble() + 1.0;
+        final double frac = page - page.floorToDouble();
+        if (frac >= 0.25) {
+          targetPage = page.floorToDouble() + 1.0;
       } else {
         targetPage = page.floorToDouble();
       }
@@ -94,8 +94,13 @@ class _DashboardHomeState extends State<DashboardHome> with SingleTickerProvider
   final GlobalKey _quotesKey = GlobalKey();
   // Throttle drag->jump updates to avoid excessive controller updates that
   // can cause jank. We'll allow updates at ~60Hz.
-  DateTime? _lastDragJumpTime;
-  static const int _dragThrottleMs = 16;
+  // (previous throttle/jump-time fields removed) — we commit to nearest
+  // tab immediately during drag and avoid per-frame jumps.
+  // Lightweight notifier that follows the PageController.page value so UI
+  // that needs to smoothly follow the finger can listen without requiring
+  // full widget rebuilds via setState. We keep this separate from
+  // `_currentIndex` which is only committed on page change/drag end.
+  late final ValueNotifier<double> _pageNotifier;
 
   // Use centralized colors from AppColors
 
@@ -111,6 +116,14 @@ class _DashboardHomeState extends State<DashboardHome> with SingleTickerProvider
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: _currentIndex);
+    _pageNotifier = ValueNotifier<double>(_currentIndex.toDouble());
+    // Mirror the PageController.page into the notifier so listeners can
+    // react to fractional page changes without setState.
+    _pageController.addListener(() {
+      if (_pageController.hasClients) {
+        _pageNotifier.value = _pageController.page ?? _pageController.initialPage.toDouble();
+      }
+    });
     // No fractional page listener needed when indicator is removed.
     // Initialize FAB animation controller and staggered animations here
     _fabController = AnimationController(vsync: this, duration: const Duration(milliseconds: 320));
@@ -157,6 +170,7 @@ class _DashboardHomeState extends State<DashboardHome> with SingleTickerProvider
   @override
   void dispose() {
     _pageController.dispose();
+    _pageNotifier.dispose();
     _fabController.dispose();
     super.dispose();
   }
@@ -213,7 +227,7 @@ class _DashboardHomeState extends State<DashboardHome> with SingleTickerProvider
           ),
         )),
         RepaintBoundary(child: _KeepAliveWrapper(child: QuotePage(key: _quotesKey, embedded: true))),
-        RepaintBoundary(child: _KeepAliveWrapper(child: InventoryPage(key: _inventoryKey, embedded: true))),
+  RepaintBoundary(child: _KeepAliveWrapper(child: InventoryPage(key: _inventoryKey, embedded: true))),
       ],
     );
   }
@@ -486,29 +500,29 @@ class _DashboardHomeState extends State<DashboardHome> with SingleTickerProvider
           tooltip: 'Add client',
         );
       case 4: // Inventory
-        return FloatingActionButton(
-          onPressed: () async {
-            final nav = Navigator.of(context);
-            final state = _inventoryKey.currentState;
-            if (state != null) {
+      return FloatingActionButton(
+        onPressed: () async {
+          final nav = Navigator.of(context);
+          // Try to call embedded InventoryPage's openAddDialog if present
+          final state = _inventoryKey.currentState;
+          if (state != null) {
+            try {
+              await (state as dynamic).openAddDialog();
               try {
-                await (state as dynamic).openAddDialog();
-                try {
-                  await (state as dynamic).refresh();
-                } catch (_) {}
-              } catch (_) {
-                await nav.push<bool>(MaterialPageRoute(builder: (_) => const InventoryPage(embedded: false)));
-              }
-            } else {
-              await nav.push<bool>(MaterialPageRoute(builder: (_) => const InventoryPage(embedded: false)));
-            }
-            if (mounted) setState(() {});
-          },
-          backgroundColor: activeColor,
-          foregroundColor: onActive,
-          child: const Icon(Icons.add),
-          tooltip: 'Add inventory',
-        );
+                await (state as dynamic).refresh();
+              } catch (_) {}
+              return;
+            } catch (_) {}
+          }
+          // fallback to opening full Inventory page
+          await nav.push<bool>(MaterialPageRoute(builder: (_) => const InventoryPage(embedded: false, openAddOnLoad: true)));
+          if (mounted) setState(() {});
+        },
+        backgroundColor: activeColor,
+        foregroundColor: onActive,
+        child: const Icon(Icons.add),
+        tooltip: 'Add inventory',
+      );
       default:
         return null;
     }
@@ -575,39 +589,44 @@ class _DashboardHomeState extends State<DashboardHome> with SingleTickerProvider
       bottomNavigationBar: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onHorizontalDragUpdate: (details) {
-          // Map finger X position over the bottom nav to a fractional page index
+          // Map finger X position over the bottom nav to a page index and
+          // commit immediately when the finger enters a new tab region.
           final renderBox = context.findRenderObject() as RenderBox?;
           if (renderBox == null) return;
           final local = renderBox.globalToLocal(details.globalPosition);
           final width = renderBox.size.width;
           if (width <= 0) return;
-          final pages = 5;
-          // fractional page in [0, pages-1]
+          const pages = 5;
+          // Map to [0, pages-1] and pick the nearest tab index for immediate
+          // commit. This makes the nav snappy: as soon as the finger is over
+          // the next tab, we switch to it.
           final frac = (local.dx.clamp(0.0, width) / width) * (pages - 1);
-          if (_pageController.hasClients) {
-            final now = DateTime.now();
-            final shouldJump = _lastDragJumpTime == null || now.difference(_lastDragJumpTime!).inMilliseconds >= _dragThrottleMs;
-            if (shouldJump) {
-              final offset = frac * _pageController.position.viewportDimension;
-              _pageController.jumpTo(offset);
-              _lastDragJumpTime = now;
-            }
-          }
-          final newIndex = frac.round();
-          if (newIndex != _currentIndex) {
+          final newIndex = frac.round().clamp(0, pages - 1);
+
+          if (newIndex != _currentIndex && _pageController.hasClients) {
             setState(() {
               _currentIndex = newIndex;
             });
+            // Animate quickly to the selected page so the content updates
+            // smoothly and avoids a visible 'halfway' state.
+            _pageController.animateToPage(newIndex, duration: const Duration(milliseconds: 160), curve: Curves.easeOut);
           }
         },
         onHorizontalDragEnd: (_) {
           // snap to nearest page
           if (_pageController.hasClients) {
-            _pageController.animateToPage(_currentIndex, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+              // Commit the actual page (rounded) as the new current index and
+              // animate to that page so the PageView settles cleanly.
+              final double page = _pageController.page ?? _currentIndex.toDouble();
+              final commitIndex = page.round().clamp(0, 4);
+              setState(() {
+                _currentIndex = commitIndex;
+              });
+              _pageController.animateToPage(_currentIndex, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
           }
         },
         child: BottomNavigationBar(
-          currentIndex: _currentIndex,
+            currentIndex: _currentIndex,
           onTap: (i) {
             // animate the PageView to the tapped page
             _pageController.animateToPage(i, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);

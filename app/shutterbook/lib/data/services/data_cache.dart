@@ -4,6 +4,7 @@
 // client snapshot with TTL to speed cold-starts.
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -69,11 +70,15 @@ class DataCache {
 
   void clearClients() {
     _clients = null;
+    _clientsFuture = null;
+    unawaited(_purgePersistedClients());
   }
 
   // --- Bookings (in-memory only) ---
   List<Booking>? _bookings;
   Future<List<Booking>>? _bookingsFuture;
+  // Incremented when bookings are cleared so UI can listen and refresh.
+  final ValueNotifier<int> bookingsVersion = ValueNotifier<int>(0);
 
   Future<List<Booking>> getBookings({bool forceRefresh = false}) {
     if (!forceRefresh && _bookings != null) return Future.value(_bookings);
@@ -91,6 +96,7 @@ class DataCache {
 
   void clearBookings() {
     _bookings = null;
+    bookingsVersion.value++;
   }
 
   // --- Inventory (in-memory only) ---
@@ -120,5 +126,13 @@ class DataCache {
     clearClients();
     clearBookings();
     clearInventory();
+  }
+
+  Future<void> _purgePersistedClients() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_kClientsPrefsKey);
+      await prefs.remove(_kClientsTsKey);
+    } catch (_) {}
   }
 }

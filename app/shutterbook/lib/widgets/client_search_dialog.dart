@@ -147,6 +147,7 @@ class _AddClientDialogState extends State<_AddClientDialog> {
   final _email = TextEditingController();
   final _phone = TextEditingController();
   final ClientTable _table = ClientTable();
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -165,7 +166,23 @@ class _AddClientDialogState extends State<_AddClientDialog> {
       email: _email.text.trim(),
       phone: _phone.text.trim().replaceAll(RegExp(r'\D'), ''),
     );
-  await _table.insertClient(client);
+    try {
+      await _table.insertClient(client);
+    } catch (e) {
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('unique') || msg.contains('unique constraint') || msg.contains('idx_clients_email') || msg.contains('unique index')) {
+        // Set inline error message so we don't create nested dialogs which
+        // can interfere with the parent dialog navigation.
+        if (!mounted) return;
+        setState(() {
+          _errorMessage = 'This email address is already taken.';
+        });
+        return;
+      }
+      // For other errors, rethrow so they can surface in debug builds or be
+      // handled by higher-level error reporting.
+      rethrow;
+    }
   // refresh shared cache and then read cached list to find inserted client
   final insertedList = await DataCache.instance.getClients(forceRefresh: true);
   final found = insertedList.firstWhere((c) => c.email == client.email, orElse: () => client);
@@ -187,7 +204,24 @@ class _AddClientDialogState extends State<_AddClientDialog> {
             children: [
               TextFormField(controller: _first, decoration: const InputDecoration(labelText: 'First name'), validator: _validateNotEmpty),
               TextFormField(controller: _last, decoration: const InputDecoration(labelText: 'Last name'), validator: _validateNotEmpty),
-              TextFormField(controller: _email, decoration: const InputDecoration(labelText: 'Email'), validator: (v) => _validateNotEmpty(v)),
+              if (_errorMessage != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8.0),
+                  child: Text(_errorMessage!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                ),
+              TextFormField(
+                controller: _email,
+                decoration: const InputDecoration(labelText: 'Email'),
+                validator: (v) {
+                  final notEmpty = _validateNotEmpty(v);
+                  if (notEmpty != null) return notEmpty;
+                  // Basic email format check
+                  final email = v!.trim();
+                  final emailRegex = RegExp(r"^[^@\s]+@[^@\s]+\.[^@\s]+$");
+                  if (!emailRegex.hasMatch(email)) return 'Invalid email address';
+                  return null;
+                },
+              ),
               TextFormField(controller: _phone, decoration: const InputDecoration(labelText: 'Phone'), validator: (v) => _validateNotEmpty(v)),
             ],
           ),

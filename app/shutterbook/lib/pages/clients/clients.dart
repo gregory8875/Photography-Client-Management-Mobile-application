@@ -119,95 +119,169 @@ class _ClientsPageState extends State<ClientsPage> {
     );
     final emailController = TextEditingController(text: client?.email ?? '');
     final phoneController = TextEditingController(text: client?.phone ?? '');
-    final formKey = GlobalKey<FormState>();
+  final formKey = GlobalKey<FormState>();
+  final ValueNotifier<String?> emailError = ValueNotifier<String?>(null);
+  Timer? emailDebounce;
+  bool isSaving = false;
 
-    final result = await showDialog<Client>(
+    // Show dialog which performs DB insert/update itself so we can surface
+    // duplicate-email errors inline without closing the dialog prematurely.
+    final created = await showDialog<Client?>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(client == null ? 'Add Client' : 'Edit Client'),
-        content: Form(
-          key: formKey,
-          child: SingleChildScrollView(
-            child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextFormField(
-                    controller: firstNameController,
-                    decoration: const InputDecoration(labelText: 'First Name'),
-                    validator: (value) => value == null || value.trim().isEmpty
-                        ? 'First name required'
-                        : null,
-                    textCapitalization: TextCapitalization.words,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: lastNameController,
-                    decoration: const InputDecoration(labelText: 'Last Name'),
-                    validator: (value) => value == null || value.trim().isEmpty
-                        ? 'Last name required'
-                        : null,
-                    textCapitalization: TextCapitalization.words,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: emailController,
-                    decoration: const InputDecoration(labelText: 'Email'),
-                    validator: _validateEmail,
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: phoneController,
-                    decoration: const InputDecoration(labelText: 'Phone'),
-                    validator: _validatePhone,
-                    keyboardType: TextInputType.phone,
-                  ),
-                ],
-              ),
+      builder: (context) => StatefulBuilder(builder: (context, setStateDialog) {
+
+        Future<void> doSave() async {
+          final dialogNav = Navigator.of(context);
+          if (!(formKey.currentState?.validate() ?? false)) return;
+          final confirmed = await _showConfirmationDialog(
+            client == null ? 'Add Client' : 'Save Changes',
+            client == null
+                ? 'Are you sure you want to add this client?'
+                : 'Are you sure you want to save changes to this client?',
+          );
+          if (!confirmed) return;
+
+          final newClient = Client(
+            id: client?.id,
+            firstName: _capitalize(firstNameController.text.trim()),
+            lastName: _capitalize(lastNameController.text.trim()),
+            email: emailController.text.trim().toLowerCase(),
+            phone: phoneController.text.trim().replaceAll(RegExp(r'\D'), ''),
+          );
+
+          setStateDialog(() {
+            isSaving = true;
+            emailError.value = null;
+          });
+
+          try {
+            if (client == null) {
+              await _clientTable.insertClient(newClient);
+            } else {
+              await _clientTable.updateClient(newClient);
+            }
+            // success — close dialog and return created/updated client
+            if (dialogNav.mounted) dialogNav.pop(newClient);
+          } catch (e) {
+            final msg = e.toString().toLowerCase();
+            if (msg.contains('unique') || msg.contains('unique constraint') || msg.contains('idx_clients_email') || msg.contains('unique index')) {
+              // Surface the duplicate error via the notifier so the validator
+              // and inline UI pick it up.
+              emailError.value = 'This email address is already taken.';
+              try {
+                formKey.currentState?.validate();
+              } catch (_) {}
+            } else {
+              // rethrow other errors so they can be logged/handled by global handlers
+              rethrow;
+            }
+          } finally {
+            try {
+              setStateDialog(() {
+                isSaving = false;
+              });
+            } catch (_) {}
+          }
+        }
+
+        return AlertDialog(
+          title: Text(client == null ? 'Add Client' : 'Edit Client'),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ValueListenableBuilder<String?>(
+                      valueListenable: emailError,
+                      builder: (context, value, _) => value != null
+                          ? Padding(
+                              padding: const EdgeInsets.only(bottom: 8.0),
+                              child: Text(value, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    TextFormField(
+                      controller: firstNameController,
+                      decoration: const InputDecoration(labelText: 'First Name'),
+                      validator: (value) => value == null || value.trim().isEmpty ? 'First name required' : null,
+                      textCapitalization: TextCapitalization.words,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: lastNameController,
+                      decoration: const InputDecoration(labelText: 'Last Name'),
+                      validator: (value) => value == null || value.trim().isEmpty ? 'Last name required' : null,
+                      textCapitalization: TextCapitalization.words,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: emailController,
+                      decoration: const InputDecoration(labelText: 'Email'),
+                      validator: (v) {
+                        final basic = _validateEmail(v);
+                        if (basic != null) return basic;
+                        return emailError.value;
+                      },
+                      keyboardType: TextInputType.emailAddress,
+                      onChanged: (val) {
+                        emailDebounce?.cancel();
+                        emailDebounce = Timer(const Duration(milliseconds: 300), () async {
+                          final e = val.trim().toLowerCase();
+                          if (e.isEmpty) {
+                            emailError.value = null;
+                            try {
+                              formKey.currentState?.validate();
+                            } catch (_) {}
+                            return;
+                          }
+                          try {
+                            final existing = await _clientTable.getClientByEmail(e);
+                            if (existing == null || (client != null && existing.id == client.id)) {
+                              emailError.value = null;
+                            } else {
+                              emailError.value = 'This email address is already taken.';
+                            }
+                            try {
+                              formKey.currentState?.validate();
+                            } catch (_) {}
+                          } catch (_) {
+                            // ignore DB errors during live validation
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: phoneController,
+                      decoration: const InputDecoration(labelText: 'Phone'),
+                      validator: _validatePhone,
+                      keyboardType: TextInputType.phone,
+                    ),
+                  ]),
+            ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final nav = Navigator.of(context);
-              if (formKey.currentState?.validate() ?? false) {
-                final confirmed = await _showConfirmationDialog(
-                  client == null ? 'Add Client' : 'Save Changes',
-                  client == null
-                      ? 'Are you sure you want to add this client?'
-                      : 'Are you sure you want to save changes to this client?',
-                );
-                if (!confirmed) return;
-                final newClient = Client(
-                  id: client?.id,
-                  firstName: _capitalize(firstNameController.text.trim()),
-                  lastName: _capitalize(lastNameController.text.trim()),
-                  email: emailController.text.trim().toLowerCase(),
-                  phone: phoneController.text.trim().replaceAll(
-                    RegExp(r'\D'),
-                    '',
-                  ),
-                );
-                if (nav.mounted) nav.pop(newClient);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: isSaving ? null : () async => await doSave(),
+              child: isSaving ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Save'),
+            ),
+          ],
+        );
+      }),
     );
 
-    if (result != null) {
-      if (client == null) {
-        await _clientTable.insertClient(result);
-      } else {
-        await _clientTable.updateClient(result);
-      }
+    // Clean up debounce and notifier used for live validation
+    try {
+      emailDebounce?.cancel();
+    } catch (_) {}
+    try {
+      emailError.dispose();
+    } catch (_) {}
+
+    if (created != null) {
       // Clear shared clients cache so other pages pick up changes
       DataCache.instance.clearClients();
       _loadClients();
@@ -236,136 +310,117 @@ class _ClientsPageState extends State<ClientsPage> {
 
   // show client details dialog with actions to view quotes or bookings (shows counts)
   Future<void> _showClientDetails(Client client) async {
-    // Show dialog immediately and fetch counts asynchronously to avoid
-    // blocking the first frame and causing jank.
     if (!mounted) return;
+
     await showDialog<void>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setStateDialog) {
-          // local mutable holders for counts; null => loading
-          int? quotesCount;
-          int? bookingsCount;
+      builder: (context) {
+        // Create a single future that fetches both lists. Using a FutureBuilder
+        // here is more robust than scheduling a post-frame callback and managing
+        // local mutable state for the counts.
+        final Future<List<dynamic>> countsFuture = client.id != null
+            ? Future.wait([_quoteTable.getQuotesByClient(client.id!), _bookingTable.getBookingsByClient(client.id!)])
+            : Future.value([<dynamic>[], <dynamic>[]]);
 
-          // Kick off async fetch after the first frame of the dialog so the
-          // dialog appears immediately and updates when data arrives.
-          WidgetsBinding.instance.addPostFrameCallback((_) async {
-            if (!mounted) return;
-            try {
-              if (client.id != null) {
-                final qFut = _quoteTable.getQuotesByClient(client.id!);
-                final bFut = _bookingTable.getBookingsByClient(client.id!);
-                final results = await Future.wait([qFut, bFut]);
-                if (!mounted) return;
-                setStateDialog(() {
-                  quotesCount = (results[0] as List).length;
-                  bookingsCount = (results[1] as List).length;
-                });
-              } else {
-                setStateDialog(() {
-                  quotesCount = 0;
-                  bookingsCount = 0;
-                });
-              }
-            } catch (e) {
-              if (kDebugMode) debugPrint('Error fetching client counts: $e');
-              try {
-                setStateDialog(() {
-                  quotesCount = 0;
-                  bookingsCount = 0;
-                });
-              } catch (_) {}
-            }
-          });
-
-          return AlertDialog(
-            title: Row(
-              children: [
-                Expanded(child: Text('${client.firstName} ${client.lastName}')),
-                // overflow menu in the title (top-right) for less-accessible destructive actions
-                PopupMenuButton<int>(
-                  icon: const Icon(Icons.more_vert),
-                  onSelected: (v) async {
-                    // close details dialog first so subsequent flows use root navigator context
-                    Navigator.pop(context);
-                    if (v == 1) {
-                      await _addOrEditClient(client: client);
-                    } else if (v == 2) {
-                      await _deleteClient(client);
-                    }
-                  },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem<int>(value: 1, child: Text('Edit')),
-                    PopupMenuItem<int>(
-                      value: 2,
-                      child: Text('Delete', style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Email: ${client.email}'),
-                const SizedBox(height: 8),
-                Text('Phone: ${client.phone}'),
-                const SizedBox(height: 12),
-                Row(children: [
-                  const Text('Quotes: '),
-                  if (quotesCount == null) const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) else Text('$quotesCount'),
-                ]),
-                const SizedBox(height: 6),
-                Row(children: [
-                  const Text('Bookings: '),
-                  if (bookingsCount == null) const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) else Text('$bookingsCount'),
-                ]),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Close'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  final nav = Navigator.of(context);
-                  nav.pop();
-                  // Delegate to parent's onViewQuotes if available so we don't push separate views
-                  if (widget.onViewQuotes != null) {
-                    try {
-                      widget.onViewQuotes!(client);
-                      return;
-                    } catch (_) {}
-                  }
-                  // fallback to opening full Quotes page
-                  Navigator.pushNamed(nav.context, '/quotes', arguments: client);
-                },
-                child: const Text('View Quotes'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  final nav = Navigator.of(context);
-                  nav.pop();
-                  // Delegate to parent's onViewBookings if available so we don't push separate views
-                  if (widget.onViewBookings != null) {
-                    try {
-                      widget.onViewBookings!(client);
-                    } catch (_) {
-                      // fallback to opening full Bookings page
-                      Navigator.push(nav.context, MaterialPageRoute(builder: (_) => BookingsPage(initialClient: client)));
-                    }
-                  } else {
-                    Navigator.push(nav.context, MaterialPageRoute(builder: (_) => BookingsPage(initialClient: client)));
+        return AlertDialog(
+          title: Row(
+            children: [
+              Expanded(child: Text('${client.firstName} ${client.lastName}')),
+              PopupMenuButton<int>(
+                icon: const Icon(Icons.more_vert),
+                onSelected: (v) async {
+                  Navigator.pop(context);
+                  if (v == 1) {
+                    await _addOrEditClient(client: client);
+                  } else if (v == 2) {
+                    await _deleteClient(client);
                   }
                 },
-                child: const Text('View Bookings'),
+                itemBuilder: (context) => [
+                  const PopupMenuItem<int>(value: 1, child: Text('Edit')),
+                  PopupMenuItem<int>(
+                    value: 2,
+                    child: Text('Delete', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  ),
+                ],
               ),
             ],
-          );
-        },
-      ),
+          ),
+          content: FutureBuilder<List<dynamic>>(
+            future: countsFuture,
+            builder: (context, snapshot) {
+              int? quotesCount;
+              int? bookingsCount;
+
+              if (snapshot.connectionState != ConnectionState.done) {
+                quotesCount = null;
+                bookingsCount = null;
+              } else if (snapshot.hasError) {
+                if (kDebugMode) debugPrint('Error fetching client counts: ${snapshot.error}');
+                quotesCount = 0;
+                bookingsCount = 0;
+              } else {
+                final results = snapshot.data!;
+                quotesCount = (results[0] as List).length;
+                bookingsCount = (results[1] as List).length;
+              }
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Email: ${client.email}'),
+                  const SizedBox(height: 8),
+                  Text('Phone: ${client.phone}'),
+                  const SizedBox(height: 12),
+                  Row(children: [
+                    const Text('Quotes: '),
+                    if (quotesCount == null) const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) else Text('$quotesCount'),
+                  ]),
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    const Text('Bookings: '),
+                    if (bookingsCount == null) const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) else Text('$bookingsCount'),
+                  ]),
+                ],
+              );
+            },
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+            ElevatedButton(
+              onPressed: () {
+                final nav = Navigator.of(context);
+                nav.pop();
+                if (widget.onViewQuotes != null) {
+                  try {
+                    widget.onViewQuotes!(client);
+                    return;
+                  } catch (_) {}
+                }
+                Navigator.pushNamed(nav.context, '/quotes', arguments: client);
+              },
+              child: const Text('View Quotes'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final nav = Navigator.of(context);
+                nav.pop();
+                if (widget.onViewBookings != null) {
+                  try {
+                    widget.onViewBookings!(client);
+                  } catch (_) {
+                    Navigator.push(nav.context, MaterialPageRoute(builder: (_) => BookingsPage(initialClient: client)));
+                  }
+                } else {
+                  Navigator.push(nav.context, MaterialPageRoute(builder: (_) => BookingsPage(initialClient: client)));
+                }
+              },
+              child: const Text('View Bookings'),
+            ),
+          ],
+        );
+      },
     );
   }
 

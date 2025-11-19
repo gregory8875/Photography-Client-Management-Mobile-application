@@ -20,6 +20,15 @@ class UIStyles {
     );
   }
 
+  static ButtonStyle primaryButtonGrey(BuildContext context) {
+    return ElevatedButton.styleFrom(
+      backgroundColor: Color.fromARGB(255, 145, 142, 142),
+      foregroundColor: Colors.black,
+      textStyle: const TextStyle(fontSize: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    );
+  }
+
   static ButtonStyle destructiveButton(BuildContext context) {
     final t = Theme.of(context);
     return ElevatedButton.styleFrom(

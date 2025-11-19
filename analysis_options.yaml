@@ -1,0 +1,10 @@
+# Repo-level analyzer settings to ignore vendored package test noise
+# This keeps CI and local `flutter analyze` focused on the app code.
+
+analyzer:
+  exclude:
+    - app/pdf-3.11.3/test/**
+    - app/pdf-3.11.3/coverage/**
+    - app/pdf-3.11.3/example/**
+
+# You can expand this with other project-wide rules later.

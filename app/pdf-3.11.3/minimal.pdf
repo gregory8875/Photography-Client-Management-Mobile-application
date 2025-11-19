@@ -1,0 +1,100 @@
+%PDF-1.4
+%¥±ë
+% https://github.com/DavBfr/dart_pdf
+
+% ------------------------------------------------------------------------------
+% PdfXrefTable
+% Verbose dart_pdf
+% Producer https://github.com/DavBfr/dart_pdf
+% Creation date: 2025-11-06 09:22:40.834288
+% Compress: false
+% Crypto: false
+% Creation time: 0.010291 seconds
+% File size: 1914 bytes
+% Objects: 4                                          
+
+% ------------------------------------------------------------------------------
+% PdfObjectBase<PdfDict<PdfDataType>>
+% Creation time: 0.001159 seconds         
+4 0 obj
+<<
+  /Type  /Catalog
+  /Pages 1 0 R
+>>
+endobj
+
+% ------------------------------------------------------------------------------
+% PdfObjectBase<PdfDict<PdfDataType>>
+% Creation time: 0.000546 seconds         
+1 0 obj
+<<
+  /Type  /Pages
+  /Count 1
+  /Kids
+  [
+    3 0 R
+  ]
+>>
+endobj
+
+% ------------------------------------------------------------------------------
+% PdfObjectBase<PdfDict<PdfDataType>>
+% Creation time: 0.000563 seconds         
+3 0 obj
+<<
+  /Type      /Page
+  /Parent    1 0 R
+  /MediaBox
+  [
+    0
+    0
+    595.27559
+    841.88976
+  ]
+  /Resources
+  <<
+    /ProcSet
+    [
+      /PDF
+    ]
+  >>
+  /Contents  2 0 R
+>>
+endobj
+
+% ------------------------------------------------------------------------------
+% PdfObjectBase<PdfDictStream>
+% Creation time: 0.000436 seconds                
+2 0 obj
+<<
+  /Length 32
+>>
+stream
+30 811.88976 m 200 641.88976 l S
+endstream
+endobj
+
+% ------------------------------------------------------------------------------
+% PdfXrefTable pdf_1_4
+%   4 0 obj inUse 570
+%   1 0 obj inUse 787
+%   3 0 obj inUse 1024
+%   2 0 obj inUse 1384
+xref
+0 5
+0000000000 65535 f 
+0000000787 00000 n 
+0000001384 00000 n 
+0000001024 00000 n 
+0000000570 00000 n 
+
+trailer
+<<
+  /Root 4 0 R
+  /Size 5
+>>
+
+% ------------------------------------------------------------------------------
+startxref
+1663
+%%EOF
